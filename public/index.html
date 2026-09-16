@@ -1740,7 +1740,7 @@ function nextStep(d){ setTimeout(()=>{ if(!G||G.dead||G.paused)return; beginPitc
 function beginPitch(){
   if(G.dead)return;
   G.batSwingT=0; G.ballAnim=null; G.runAnim=[]; G.batStay=false; G.chase=null; G.covers=[];
-  G.mirror=(G.players===2)?!aBatting():false;
+  G.mirror=false;   // 공수와 무관하게 항상 1루가 우측
   if(G.mode==='hr') return hrLoop();
   closePanels();
   setTimeout(()=>{
