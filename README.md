@@ -2,29 +2,51 @@
 
 2026 KBO 구단으로 즐기는 단순 야구 게임입니다.
 
-## 플레이
+## 플레이 링크
 
-**https://amaddaofficial.github.io/Dan-baseball/**
+| 배포 | URL |
+|------|-----|
+| **Firebase Hosting** (권장) | `https://YOUR_PROJECT_ID.web.app` |
+| GitHub Pages | https://amaddaofficial.github.io/Dan-baseball/ |
 
-> 처음 한 번만: [Settings → Pages](https://github.com/amaddaofficial/Dan-baseball/settings/pages)에서 **Source**를 **GitHub Actions**로 선택해 주세요. 이후 `main`에 push할 때마다 자동 배포됩니다.
+Firebase 프로젝트 ID를 알면 `https://<프로젝트ID>.web.app` 주소로 바로 접속할 수 있습니다.
+
+## Firebase 배포 설정 (한 번만)
+
+1. [Firebase Console](https://console.firebase.google.com/) → 프로젝트 선택 → **Hosting** → **Get started** (Hosting 활성화)
+2. GitHub 저장소에 Secrets 추가: [Settings → Secrets](https://github.com/amaddaofficial/Dan-baseball/settings/secrets/actions)
+   - `FIREBASE_PROJECT_ID` — Firebase 프로젝트 ID (예: `dan-baseball-a1b2c`)
+   - `FIREBASE_SERVICE_ACCOUNT` — 서비스 계정 JSON 전체 내용
+3. `.firebaserc`의 `YOUR_FIREBASE_PROJECT_ID`를 실제 프로젝트 ID로 변경
+4. `main`에 push하면 [Actions](https://github.com/amaddaofficial/Dan-baseball/actions)에서 자동 배포
+
+### 서비스 계정 만들기
+
+1. [Google Cloud IAM](https://console.cloud.google.com/iam-admin/serviceaccounts) → Firebase 프로젝트 선택
+2. **Create service account** → 역할: **Firebase Hosting Admin**
+3. JSON 키 다운로드 → GitHub Secret `FIREBASE_SERVICE_ACCOUNT`에 붙여넣기
+
+## GitHub Pages 배포 (선택)
+
+> 처음 한 번: [Settings → Pages](https://github.com/amaddaofficial/Dan-baseball/settings/pages)에서 **Source**를 **GitHub Actions**로 선택
 
 ## 업데이트 방법
 
-1. `index.html` 파일을 수정합니다.
-2. `main` 브랜치에 push하면 GitHub Actions가 자동으로 사이트를 다시 배포합니다.
-3. 배포가 끝나면(약 1~2분) 같은 링크에서 업데이트된 게임을 플레이할 수 있습니다.
+1. `public/index.html` 수정
+2. `main` 브랜치에 push
+3. Firebase / GitHub Pages가 자동으로 다시 배포 (약 1~2분)
 
-## 로컬에서 테스트
-
-브라우저에서 `index.html`을 열거나, 간단한 로컬 서버로 확인할 수 있습니다.
+## 로컬 테스트
 
 ```bash
-python3 -m http.server 8080
+python3 -m http.server 8080 --directory public
 ```
 
-브라우저에서 http://localhost:8080 으로 접속하세요.
+브라우저에서 http://localhost:8080 으로 접속
 
 ## 저장소 구조
 
-- `index.html` — 게임 전체 (HTML/CSS/JS 단일 파일)
-- `.github/workflows/pages.yml` — GitHub Pages 자동 배포 설정
+- `public/index.html` — 게임 전체 (HTML/CSS/JS 단일 파일)
+- `firebase.json` — Firebase Hosting 설정
+- `.github/workflows/firebase-hosting.yml` — Firebase 자동 배포
+- `.github/workflows/pages.yml` — GitHub Pages 자동 배포
