@@ -6,7 +6,7 @@
 
 | 배포 | URL |
 |------|-----|
-| **Firebase Hosting** (권장) | `https://YOUR_PROJECT_ID.web.app` |
+| **Firebase Hosting** (권장) | https://dan-baseball.web.app |
 | GitHub Pages | https://amaddaofficial.github.io/Dan-baseball/ |
 
 Firebase 프로젝트 ID를 알면 `https://<프로젝트ID>.web.app` 주소로 바로 접속할 수 있습니다.
@@ -15,10 +15,8 @@ Firebase 프로젝트 ID를 알면 `https://<프로젝트ID>.web.app` 주소로 
 
 1. [Firebase Console](https://console.firebase.google.com/) → 프로젝트 선택 → **Hosting** → **Get started** (Hosting 활성화)
 2. GitHub 저장소에 Secrets 추가: [Settings → Secrets](https://github.com/amaddaofficial/Dan-baseball/settings/secrets/actions)
-   - `FIREBASE_PROJECT_ID` — Firebase 프로젝트 ID (예: `dan-baseball-a1b2c`)
    - `FIREBASE_SERVICE_ACCOUNT` — 서비스 계정 JSON 전체 내용
-3. `.firebaserc`의 `YOUR_FIREBASE_PROJECT_ID`를 실제 프로젝트 ID로 변경
-4. `main`에 push하면 [Actions](https://github.com/amaddaofficial/Dan-baseball/actions)에서 자동 배포
+3. `main`에 push하면 [Actions](https://github.com/amaddaofficial/Dan-baseball/actions)에서 자동 배포
 
 ### 서비스 계정 만들기
 
