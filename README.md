@@ -4,9 +4,9 @@
 
 ## 플레이
 
-배포가 완료되면 아래 링크에서 바로 플레이할 수 있습니다.
-
 **https://amaddaofficial.github.io/Dan-baseball/**
+
+> 처음 한 번만: [Settings → Pages](https://github.com/amaddaofficial/Dan-baseball/settings/pages)에서 **Source**를 **GitHub Actions**로 선택해 주세요. 이후 `main`에 push할 때마다 자동 배포됩니다.
 
 ## 업데이트 방법
 
