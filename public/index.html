@@ -1015,7 +1015,7 @@ function startGame(){
     score:{away:0,home:0}, bases:[null,null,null], line:{away:[],home:[]}, lastKmh:0, oppSwingT:0,
     phase:'idle', mirror:false, pitch:null, ballAnim:null,
     runAnim:[], parts:[], batSwingT:0, swingT:0, chase:null, covers:[],
-    crowd:0, crowdT:0,
+    crowd:0, crowdT:0, pickoffBusy:false,
     hr:{started:false,thrown:0,total:15,pts:0,hits:{HOMERUN:0,TRIPLE:0,DOUBLE:0,SINGLE:0},start:0,deadline:30000},
     pitcherPanel:null,batterPanel:null,cpuPitchAt:null
   };
@@ -1741,6 +1741,7 @@ function beginPitch(){
   if(G.dead)return;
   G.batSwingT=0; G.ballAnim=null; G.runAnim=[]; G.batStay=false; G.chase=null; G.covers=[];
   G.mirror=false;   // 공수와 무관하게 항상 1루가 우측
+  G.pickoffBusy=false;
   if(G.mode==='hr') return hrLoop();
   closePanels();
   setTimeout(()=>{
@@ -2011,18 +2012,22 @@ function ballTo(sx,sy,tx,ty,dur,done){
     x:sx,y:sy,h:0,trail:[],done};
 }
 /* 결과별 타구 설계
-   d=비거리, h=체공, lag=야수 도착 지연(1보다 크면 늦게 도착=안 잡힘), base=송구할 베이스 */
+   d=비거리, h=체공, lag=야수 도착 지연(1보다 크면 늦게 도착=안 잡힘) */
 const HITPLAN={
-  SINGLE :{d:[118,150],h:.48,lag:1.32,base:1,per:780},   // 내야 뒤로 빠지는 타구
-  DOUBLE :{d:[176,208],h:.80,lag:1.48,base:1,per:790},   // 좌우 갭
-  TRIPLE :{d:[204,224],h:.96,lag:1.66,base:2,per:810},   // 코너 깊숙이
-  HOMERUN:{d:[268,268],h:1.25,lag:0,base:null,per:980}
+  SINGLE :{d:[118,150],h:.48,lag:1.32,per:780},   // 내야 뒤로 빠지는 타구
+  DOUBLE :{d:[176,208],h:.80,lag:1.48,per:790},   // 좌우 갭
+  TRIPLE :{d:[204,224],h:.96,lag:1.66,per:810},   // 코너 깊숙이
+  HOMERUN:{d:[268,268],h:1.25,lag:0,per:980}
 };
-/* 2·3루타로 무리하게 뛰다 송구에 잡힐 확률 — 약하게 맞은 타구일수록 더 잘 잡힌다 */
-function stretchOutChance(kind,q){
-  if(kind==='DOUBLE') return clamp(.05+(1-q)*.11,.05,.17);
-  if(kind==='TRIPLE') return clamp(.11+(1-q)*.20,.11,.32);
-  return 0;
+/* 실제 송구 거리(공을 잡은 지점→베이스)로 송구 시간을 구하고, 그 결과로
+   승부 확률을 정한다 — 짧은 송구일수록, 약하게 맞았을수록 위험해진다.
+   base/cap으로 상황별 기본 위험도를 다르게 줄 수 있다. */
+function throwDuration(dist){ return clamp(200+dist*3.4,320,1500); }
+function raceOutChance(base,cap,q,throwDist,distSpan){
+  const span=cap-base;
+  const qFactor=(1-q)*span*.45;
+  const distFactor=clamp((distSpan-throwDist)/distSpan,0,1)*span*.55;
+  return clamp(base+qFactor+distFactor,base*.6,cap);
 }
 function hitPlay(kind,q,cell){
   G.phase='hitball'; dropPanels();
@@ -2056,13 +2061,33 @@ function hitPlay(kind,q,cell){
       return;
     }
 
-    /* 잡히지 않고 그라운드에 떨어진다 — 다만 2·3루를 노리다 송구에 걸릴 수 있다 */
+    /* 잡히지 않고 그라운드에 떨어진다 — 상황에 따라 홈에서 득점을 저지하거나
+       (주자가 뛰고 있을 때) 타자주자가 다음 베이스를 욕심낼 때 그 베이스로
+       실제 승부를 건다. 승부가 없으면 굳이 던지지 않는다(예전엔 늘 2루로만 던졌다). */
     SFX.bounce();
-    const stretchOut=(kind==='DOUBLE'||kind==='TRIPLE')&&Math.random()<stretchOutChance(kind,q);
-    const runs=moves.filter(m=>m.to===3&&!(stretchOut&&m.from===-1)).length;
+    let contest=null;
+    if(kind!=='TRIPLE'){
+      const scorers=moves.filter(m=>m.to===3&&m.from>=0);
+      if(scorers.length) contest={move:scorers.reduce((a,b)=>a.from<b.from?a:b),bp:HOME,label:'home'};
+    }
+    if(!contest&&(kind==='DOUBLE'||kind==='TRIPLE')){
+      const batterMove=moves.find(m=>m.from===-1);
+      contest={move:batterMove,bp:[B1,B2,B3][batterMove.to],label:'stretch'};
+    }
+    let stretchOut=false, throwDist=0;
+    if(contest){
+      const runnerMs=pl.per*(contest.move.to-contest.move.from);
+      throwDist=Math.hypot(contest.bp[0]-fb.tx,contest.bp[1]-fb.ty);
+      const chance = contest.label==='home'
+        ? raceOutChance(.04,.22,q,throwDist,200)
+        : (kind==='DOUBLE' ? raceOutChance(.05,.26,q,throwDist,140) : raceOutChance(.10,.40,q,throwDist,180));
+      stretchOut=Math.random()<chance;
+    }
+    const outMove=stretchOut?contest.move:null;
+    const runs=moves.filter(m=>m.to===3&&m!==outMove).length;
     const nb=[null,null,null];
     moves.forEach(m=>{
-      if(stretchOut&&m.from===-1) return;   // 욕심내다 잡힌 타자주자는 베이스를 차지하지 못한다
+      if(m===outMove) return;   // 승부에서 잡힌 주자는 베이스를 차지하지 못한다
       if(m.to<3) nb[m.to]=true;
     });
     G.bases=nb; if(runs) scoreRun(runs);
@@ -2070,7 +2095,8 @@ function hitPlay(kind,q,cell){
     const lv={SINGLE:1,DOUBLE:2,TRIPLE:2}[kind];
     if(stretchOut){
       SFX.out(); reactOut(); vib(20); crowdUp(.15);
-      fx(kind==='DOUBLE'?'2루 송구 아웃!':'3루 송구 아웃!','욕심낸 주루사',lv);
+      fx(contest.label==='home'?'홈 송구 아웃!':(kind==='DOUBLE'?'2루 송구 아웃!':'3루 송구 아웃!'),
+         contest.label==='home'?'과감한 홈 승부':'욕심낸 주루사',lv);
     } else {
       const label={SINGLE:'안 타!',DOUBLE:'2루타!',TRIPLE:'3루타!'}[kind];
       reactHit(lv); crowdUp(.25+lv*.15);
@@ -2079,22 +2105,28 @@ function hitPlay(kind,q,cell){
     }
     const d=animateRunners(moves,pl.per);
 
-    /* 뒤늦게 따라간 야수가 공을 주워 베이스로 송구 */
-    const grab=fb.dur*(pl.lag-1);
-    const bp=[B1,B2,B3][pl.base];
-    const chaser=G.chase?G.chase.main:7;
-    const cov = pl.base===1 ? (chaser===4?3:4) : (chaser===5?4:5);
-    addCover(cov,pl.base,grab+320);
-    setTimeout(()=>{
-      if(!G||G.dead||G.phase!=='hitball')return;
-      SFX.mitt();
-      ballTo(fb.tx,fb.ty,bp[0],bp[1],640,()=>{ if(G&&!G.dead) SFX.mitt(); });
-    },grab);
+    /* 실제로 승부가 걸린 베이스가 있을 때만 야수가 그곳으로 송구한다 */
+    let grab=0, tdur=0;
+    if(contest){
+      grab=fb.dur*(pl.lag-1);
+      tdur=throwDuration(throwDist);
+      if(contest.label!=='home'){
+        const baseIdx=contest.move.to;              // 1=2루, 2=3루
+        const chaser=G.chase?G.chase.main:7;
+        const cov = baseIdx===1 ? (chaser===4?3:4) : (chaser===5?4:5);
+        addCover(cov,baseIdx,grab+tdur+120);
+      }
+      setTimeout(()=>{
+        if(!G||G.dead||G.phase!=='hitball')return;
+        SFX.mitt();
+        ballTo(fb.tx,fb.ty,contest.bp[0],contest.bp[1],tdur,()=>{ if(G&&!G.dead) SFX.mitt(); });
+      },grab);
+    }
     setTimeout(()=>{
       if(!G||G.dead)return;
       if(stretchOut){ addOut(1,0); return; }
       if(checkEnd())return; nextStep(500);
-    },Math.max(d+700,grab+1000));
+    },Math.max(d+700,grab+tdur+1000));
   },kind==='HOMERUN'?2400:undefined,pl.lag);
 }
 /* 파울 타구 — 파울라인 밖으로 날아가고 타자주자는 몇 걸음 뛰었다 돌아온다 */
@@ -2144,12 +2176,21 @@ function outPlay(type,cell,q){
     const fb=flyBall(fdir,fdist,fdist>140?1.05:.72,()=>{
       SFX.mitt(); vib(10);
       if(tag){
-        scoreRun(1); G.bases[2]=null;
+        // 얕은 뜬공일수록(송구 거리가 짧을수록) 홈에서 잡힐 위험이 커진다
+        const tdur=throwDuration(fdist);
+        const caught=Math.random()<raceOutChance(.08,.42,1,fdist,150);
         animateRunners([{from:2,to:3}],860);
-        ballTo(fb.tx,fb.ty,HOME[0],HOME[1],760,()=>{      // 포수는 이미 홈에 있다
+        ballTo(fb.tx,fb.ty,HOME[0],HOME[1],tdur,()=>{      // 포수는 이미 홈에 있다
           SFX.mitt();
-          fx('뜬공 아웃','희생플라이 · 1점',1); SFX.out();
-          addOut(1,1200);
+          if(caught){
+            G.bases[2]=null;
+            fx('홈 송구 아웃!','태그업 실패',2); SFX.out(); reactOut(); shake();
+            addOut(2,1200);
+          } else {
+            scoreRun(1); G.bases[2]=null;
+            fx('뜬공 아웃','희생플라이 · 1점',1); SFX.out();
+            addOut(1,1200);
+          }
         });
         return;
       }
@@ -2332,12 +2373,21 @@ function steal(idx){
   else { G.bases[idx]=null; SFX.out(); vib(30); fx('도루 실패','아웃',1);
     G.outs++; if(G.outs>=3) setTimeout(halfInningEnd,1100); }
 }
+/* 견제구도 실제로 공이 날아가는 모습을 보여주고, 베이스마다 다른 확률로 승부한다 */
+const PICKOFF_RATE=[.24,.15,.11];
 function pickoff(idx){
-  const ok=Math.random()<.18;
-  SFX.mitt();
-  if(ok){ G.bases[idx]=null; SFX.out(); shake(); vib(30); fx('견제 아웃!',null,2);
-    G.outs++; if(G.outs>=3) setTimeout(halfInningEnd,1100); }
-  else fx('세이프',null,1);
+  if(G.pickoffBusy||!G.bases[idx])return;
+  G.pickoffBusy=true;
+  const bp=[B1,B2,B3][idx];
+  const ok=Math.random()<clamp(PICKOFF_RATE[idx]+rnd(-.04,.04),.05,.4);
+  SFX.release(); vib(6);
+  ballTo(MOUND[0],MOUND[1],bp[0],bp[1],340+rnd(-25,25),()=>{
+    G.pickoffBusy=false;
+    SFX.mitt();
+    if(ok){ G.bases[idx]=null; SFX.out(); shake(); vib(30); fx('견제 아웃!',null,2);
+      G.outs++; if(G.outs>=3) setTimeout(halfInningEnd,1100); }
+    else fx('세이프',null,1);
+  });
 }
 
 /* ══════ 루프 ══════ */
