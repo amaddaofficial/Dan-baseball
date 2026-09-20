@@ -1764,15 +1764,18 @@ function launchPitch(p,vx,vy,power,rx,ry){
   SFX.release(); vib([6,14,10]);
   const speed=pitchSpeed(power,vy);
   const brk=clamp(Math.abs(vx)/850,0,1);
-  const aim=clamp((rx-PW/2)/(PW/2),-1.5,1.5);
-  const nx=clamp(aim*.78+(vx/1150)*.6,-1.8,1.8);
-  const ny=clamp(.3-power*.56+rnd(-.14,.14),-1.5,1.5);
+  const st=p.st;
+  /* 손을 뗀 실제 위치(공을 조준해 끌고 간 곳)를 그대로 코스에 반영한다 —
+     그동안은 파워 게이지만 코스에 영향을 줘 항상 가운데로 몰렸다 */
+  const dx=rx-st.bx, dy=ry-st.by;
+  const nx=clamp(dx/62+(vx/1300)*.5,-1.8,1.8);
+  const ny=clamp(dy/34+(vy/7000),-1.6,1.6);
   const pt=makePitch(nx,ny,speed,brk);
   const e=zoneEnd(ZP,pt);
   p.st.flight={t0:now(),dur:pt.travel,x0:rx,y0:ry,x1:e.x,y1:e.y,
     curve:(vx/1150)*46,spin:(vx>0?1:-1)*(0.3+brk)};
   p.st.kmh=kmh(speed);
-  p.st.hint=brk>.42?'변화구!':(speed>.82?'강속구!':'');
+  p.st.hint=brk>.42?'변화구!':(speed>.82?'강속구!':(Math.abs(ny)>.7?(ny<0?'높은 코스!':'낮은 코스!'):''));
 }
 function makePitch(nx,ny,speed,brk){
   let zone=-1,ox=nx,oy=ny;
@@ -1802,9 +1805,9 @@ function makePitch(nx,ny,speed,brk){
   return G.pitch;
 }
 function cpuPitch(){
-  // 홈런야구는 15구 전부 스트라이크존 안으로 들어온다
+  // 홈런야구는 15구 전부 스트라이크존 안으로 들어온다 — 속도·변화를 낮춰 맞히기 쉽게 한다
   if(G.mode==='hr'){
-    return makePitch(rnd(-.88,.88),rnd(-.88,.88),rnd(.42,.95),rnd(0,.7));
+    return makePitch(rnd(-.7,.7),rnd(-.7,.7),rnd(.24,.62),rnd(0,.4));
   }
   const strike=Math.random()<.62;
   let nx,ny;
@@ -1841,15 +1844,18 @@ function quality(err,cellOk,pt,isStrike){
   if(!cellOk) q*=.42;
   if(!isStrike) q*=.55;
   q*=(1-pt.brk*.2); q*=(1-(pt.speed-.5)*.14);
+  /* 홈런야구는 스피드 승부가 아니라 타격감을 즐기는 모드이므로 살짝 후하게 판정한다 */
+  if(G&&G.mode==='hr') q=clamp(q*1.22+.05,0,1);
   return clamp(q,0,1);
 }
 function resolveContact(q){
   const r=Math.random();
   if(q<=.02) return 'MISS';
-  if(q<.20) return r<.62?'MISS':'FOUL';
-  if(q<.40) return r<.34?'FOUL':(r<.74?'GROUND':'FLY');
-  if(q<.58) return r<.28?'FLY':(r<.52?'GROUND':(r<.9?'SINGLE':'DOUBLE'));
-  if(q<.74) return r<.18?'FLY':(r<.70?'SINGLE':(r<.94?'DOUBLE':'TRIPLE'));
+  /* 파울로만 몰리지 않도록 약한 맞춤에도 땅볼이 섞이게 한다 */
+  if(q<.20) return r<.60?'MISS':(r<.82?'FOUL':'GROUND');
+  if(q<.40) return r<.20?'FOUL':(r<.64?'GROUND':'FLY');
+  if(q<.58) return r<.30?'FLY':(r<.50?'GROUND':(r<.88?'SINGLE':'DOUBLE'));
+  if(q<.74) return r<.18?'FLY':(r<.68?'SINGLE':(r<.93?'DOUBLE':'TRIPLE'));
   if(q<.88) return r<.12?'FLY':(r<.42?'SINGLE':(r<.78?'DOUBLE':(r<.93?'TRIPLE':'HOMERUN')));
   return r<.46?'HOMERUN':(r<.68?'TRIPLE':(r<.9?'DOUBLE':'SINGLE'));
 }
@@ -1983,7 +1989,11 @@ function tickRunners(){
 
 /* ── 타구 ── */
 const SPRAY={0:-1,3:-1,6:-1,1:0,4:0,7:0,2:1,5:1,8:1};
-const sprayDir=c=>SPRAY[c]!==undefined?SPRAY[c]:rnd(-1,1);
+/* 존 칸에 따른 당김/밀어치기 경향은 유지하되, 갭으로 빠지는 타구가 나오도록 폭을 넓힌다 */
+const sprayDir=c=>{
+  const base=SPRAY[c]!==undefined?SPRAY[c]:rnd(-1,1);
+  return clamp(base+rnd(-.55,.55),-1,1);
+};
 function flyBall(dir,dist,height,done,dur,lag){
   const ang=-Math.PI/2+dir*Math.PI/4.3;
   const tx=HOME[0]+Math.cos(ang)*dist, ty=HOME[1]+Math.sin(ang)*dist;
@@ -2008,6 +2018,12 @@ const HITPLAN={
   TRIPLE :{d:[204,224],h:.96,lag:1.66,base:2,per:810},   // 코너 깊숙이
   HOMERUN:{d:[268,268],h:1.25,lag:0,base:null,per:980}
 };
+/* 2·3루타로 무리하게 뛰다 송구에 잡힐 확률 — 약하게 맞은 타구일수록 더 잘 잡힌다 */
+function stretchOutChance(kind,q){
+  if(kind==='DOUBLE') return clamp(.05+(1-q)*.11,.05,.17);
+  if(kind==='TRIPLE') return clamp(.11+(1-q)*.20,.11,.32);
+  return 0;
+}
 function hitPlay(kind,q,cell){
   G.phase='hitball'; dropPanels();
   SFX.crack(kind==='HOMERUN'?1:q); vib(kind==='HOMERUN'?[50,40,90]:[18,20,24]);
@@ -2024,13 +2040,14 @@ function hitPlay(kind,q,cell){
     const bump={SINGLE:1,DOUBLE:2,TRIPLE:3,HOMERUN:4}[kind];
     const moves=[];
     for(let i=2;i>=0;i--) if(G.bases[i]) moves.push({from:i,to:Math.min(3,i+bump)});
-    moves.push({from:-1,to:bump-1<3?bump-1:3});
-    const runs=moves.filter(m=>m.to===3).length;
-    const nb=[null,null,null];
-    moves.forEach(m=>{ if(m.to<3) nb[m.to]=true; });
-    G.bases=nb; if(runs) scoreRun(runs);
+    const batterTo=bump-1<3?bump-1:3;
+    moves.push({from:-1,to:batterTo});
 
     if(kind==='HOMERUN'){
+      const runs=moves.filter(m=>m.to===3).length;
+      const nb=[null,null,null];
+      moves.forEach(m=>{ if(m.to<3) nb[m.to]=true; });
+      G.bases=nb; if(runs) scoreRun(runs);
       SFX.homerun(); vib([60,40,60,40,180]); shake(); flash();
       fx('홈 런!',runs>1?runs+'점 홈런':'솔로 홈런',3);
       burst(fb.tx,fb.ty,60,['#FFD34D','#FFF3C4','#E0503D','#FFFFFF','#5EC8F5'],6);
@@ -2039,13 +2056,27 @@ function hitPlay(kind,q,cell){
       return;
     }
 
-    /* 잡히지 않고 그라운드에 떨어진다 */
+    /* 잡히지 않고 그라운드에 떨어진다 — 다만 2·3루를 노리다 송구에 걸릴 수 있다 */
     SFX.bounce();
+    const stretchOut=(kind==='DOUBLE'||kind==='TRIPLE')&&Math.random()<stretchOutChance(kind,q);
+    const runs=moves.filter(m=>m.to===3&&!(stretchOut&&m.from===-1)).length;
+    const nb=[null,null,null];
+    moves.forEach(m=>{
+      if(stretchOut&&m.from===-1) return;   // 욕심내다 잡힌 타자주자는 베이스를 차지하지 못한다
+      if(m.to<3) nb[m.to]=true;
+    });
+    G.bases=nb; if(runs) scoreRun(runs);
+
     const lv={SINGLE:1,DOUBLE:2,TRIPLE:2}[kind];
-    const label={SINGLE:'안 타!',DOUBLE:'2루타!',TRIPLE:'3루타!'}[kind];
-    reactHit(lv); crowdUp(.25+lv*.15);
-    if(lv>=2){ shake(); burst(fb.tx,fb.ty,18,['#FFD34D','#FFFFFF'],3); }
-    fx(label,runs?runs+'점 득점':null,lv);
+    if(stretchOut){
+      SFX.out(); reactOut(); vib(20); crowdUp(.15);
+      fx(kind==='DOUBLE'?'2루 송구 아웃!':'3루 송구 아웃!','욕심낸 주루사',lv);
+    } else {
+      const label={SINGLE:'안 타!',DOUBLE:'2루타!',TRIPLE:'3루타!'}[kind];
+      reactHit(lv); crowdUp(.25+lv*.15);
+      if(lv>=2){ shake(); burst(fb.tx,fb.ty,18,['#FFD34D','#FFFFFF'],3); }
+      fx(label,runs?runs+'점 득점':null,lv);
+    }
     const d=animateRunners(moves,pl.per);
 
     /* 뒤늦게 따라간 야수가 공을 주워 베이스로 송구 */
@@ -2059,8 +2090,11 @@ function hitPlay(kind,q,cell){
       SFX.mitt();
       ballTo(fb.tx,fb.ty,bp[0],bp[1],640,()=>{ if(G&&!G.dead) SFX.mitt(); });
     },grab);
-    setTimeout(()=>{ if(!G||G.dead)return; if(checkEnd())return; nextStep(500); },
-      Math.max(d+700,grab+1000));
+    setTimeout(()=>{
+      if(!G||G.dead)return;
+      if(stretchOut){ addOut(1,0); return; }
+      if(checkEnd())return; nextStep(500);
+    },Math.max(d+700,grab+1000));
   },kind==='HOMERUN'?2400:undefined,pl.lag);
 }
 /* 파울 타구 — 파울라인 밖으로 날아가고 타자주자는 몇 걸음 뛰었다 돌아온다 */
@@ -2102,6 +2136,8 @@ function outPlay(type,cell,q){
     const tp=DEF[cand[(Math.random()*cand.length)|0]];
     const fdist=clamp(Math.hypot(tp[0]-HOME[0],tp[1]-HOME[1])+rnd(-7,7),70,FENCE_R-14);
     const fdir=clamp((Math.atan2(tp[1]-HOME[1],tp[0]-HOME[0])+Math.PI/2)/(Math.PI/4.3),-1,1);
+    // 얕게 뜬 공은 야수가 판단을 그르쳐 떨어뜨리는 경우가 있다 (텍사스 안타)
+    const drop = !tag && Math.random()>clamp(.60+fdist/380,.60,.94);
     const fb=flyBall(fdir,fdist,fdist>140?1.05:.72,()=>{
       SFX.mitt(); vib(10);
       if(tag){
@@ -2114,16 +2150,39 @@ function outPlay(type,cell,q){
         });
         return;
       }
+      if(drop){
+        SFX.bounce(); reactHit(1); crowdUp(.2);
+        const moves=[{from:-1,to:0}];
+        for(let i=2;i>=0;i--) if(G.bases[i]) moves.push({from:i,to:Math.min(3,i+1)});
+        const runs=moves.filter(m=>m.to===3).length;
+        const nb=[null,null,null]; moves.forEach(m=>{ if(m.to<3) nb[m.to]=true; });
+        G.bases=nb; if(runs) scoreRun(runs);
+        fx('떨어지는 안타!','텍사스 안타',1);
+        const d=animateRunners(moves,780);
+        setTimeout(()=>{ if(!G||G.dead)return; if(checkEnd())return; nextStep(500); },d+700);
+        return;
+      }
       SFX.out(); reactOut(); fx(fdist>150?'뜬공 아웃':'내야 뜬공 아웃',null,1);
       addOut(1,1200);
     },undefined,0.86);
     return;
   }
 
-  /* ── 땅볼: 야수가 잡고 커버 들어온 베이스로 송구 ── */
+  /* ── 땅볼: 야수가 잡고 커버 들어온 베이스로 송구, 때로는 내야안타로 살아나간다 ── */
   const dp = G.bases[0]&&G.outs<2&&Math.random()<.32;
+  const infield = !dp && Math.random()<clamp(.14+(1-q)*.18,.14,.32);
   const fb=flyBall(dir,rnd(62,112),.2,()=>{
     SFX.mitt(); vib(8);
+    if(infield){
+      const f=forcedAdvance();
+      const runMoves=[{from:-1,to:0}]; f.mv.forEach(m=>runMoves.push(m));
+      f.nb[0]=true;
+      animateRunners(runMoves,900);
+      G.bases=f.nb; if(f.runs) scoreRun(f.runs);
+      SFX.bounce(); reactHit(1); crowdUp(.15);
+      fx('내야 안타!','빠른 발',1);
+      return nextStep(1100);
+    }
     const runMoves=[{from:-1,to:0}];
     const f=forcedAdvance();
     f.mv.forEach(m=>runMoves.push(m));
@@ -2138,7 +2197,7 @@ function outPlay(type,cell,q){
         SFX.mitt();
         ballTo(B2[0],B2[1],B1[0],B1[1],400,()=>{         // 이어서 1루
           SFX.mitt();
-          G.bases=[null,f.nb[1],f.nb[2]];
+          G.bases=[null,null,f.nb[2]];   // 2루에서 포스아웃된 주자가 그대로 남아있던 버그 수정
           if(f.runs) scoreRun(f.runs);
           fx('병살타!','더블 플레이',2); SFX.out(); reactOut(); shake(); vib([30,40,60]);
           burst(mx(B1[0]),B1[1]-8,16,['#FFD34D','#FFFFFF'],3);
