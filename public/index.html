@@ -76,10 +76,13 @@ body{
   cursor:pointer;background:linear-gradient(#232F3E,#18212C);
   box-shadow:inset 0 1px 0 #FFFFFF12,0 2px 6px #0006;transition:transform .1s,box-shadow .1s}
 .tcard:active{transform:scale(.96)}
+.tcard.custom{border-style:dashed;border-color:#3A4C61}
 .tcard.sel-a{border-color:#5EC8F5;box-shadow:0 0 0 1px #5EC8F555,0 0 16px #5EC8F544}
 .tcard.sel-b{border-color:#F5765E;box-shadow:0 0 0 1px #F5765E55,0 0 16px #F5765E44}
 .tcard svg{display:block;margin:0 auto}
 .tcard .tn{font-size:10.5px;margin-top:5px;line-height:1.25;color:#CFD9E4;font-weight:600}
+.tcard .tnew{font-size:26px;font-weight:800;color:#5E6C7C;line-height:52px;height:52px}
+.tcard .tedit{margin-top:4px;font-size:9.5px;color:#5EC8F5;font-weight:700}
 .foot{padding:12px 20px calc(16px + env(safe-area-inset-bottom));width:100%;max-width:460px;margin:0 auto}
 .btn{display:block;width:100%;padding:15px 0 14px;border:0;border-radius:12px;font:inherit;
   font-size:15px;font-weight:800;letter-spacing:.06em;color:#fff;cursor:pointer;position:relative;
@@ -265,6 +268,19 @@ body{
 #help dl{margin:0;font-size:12.5px;line-height:1.7;color:#C3D0DC}
 #help dt{font-weight:800;color:#F4F1E4;margin-top:14px}
 #help dd{margin:3px 0 0}
+#customize{position:absolute;inset:0;z-index:26;display:none;background:#0C1016F2;
+  padding:26px 24px calc(20px + env(safe-area-inset-bottom));overflow-y:auto}
+#customize.on{display:block}
+#customize h3{margin:0 0 16px;font-size:17px;text-align:center}
+.czPreview{display:flex;justify-content:center;margin-bottom:18px}
+.czPreview svg{width:84px;height:88px}
+.czRow{margin-bottom:18px}
+.czLabel{font-size:12.5px;font-weight:700;color:#B9C7D6;margin-bottom:8px}
+.czSwatches{display:flex;gap:10px;flex-wrap:wrap}
+.czSwatches .sw{width:38px;height:38px;border-radius:50%;cursor:pointer;
+  box-shadow:inset 0 1px 0 #FFFFFF33,0 2px 6px #0006;border:3px solid transparent;transition:transform .1s}
+.czSwatches .sw.sel{border-color:#FFD34D;transform:scale(1.12)}
+.czSwatches .sw:active{transform:scale(.92)}
 </style>
 </head>
 <body>
@@ -445,6 +461,19 @@ body{
   <div class="foot" style="padding:24px 0 0"><button class="btn" id="helpClose">닫기</button></div>
 </div>
 
+<!-- ═══════ 나만의 팀 꾸미기 ═══════ -->
+<div id="customize">
+  <h3 id="czTitle">나만의 팀 꾸미기</h3>
+  <div class="czPreview" id="czPreview"></div>
+  <div class="czRow"><div class="czLabel">모자색</div><div class="czSwatches" data-part="cap"></div></div>
+  <div class="czRow"><div class="czLabel">모자챙색</div><div class="czSwatches" data-part="bill"></div></div>
+  <div class="czRow"><div class="czLabel">가운데 줄색</div><div class="czSwatches" data-part="trim"></div></div>
+  <div class="foot" style="padding:20px 0 0">
+    <button class="btn" id="czDone">완료</button>
+    <button class="btn ghost" id="czCancel">취소</button>
+  </div>
+</div>
+
 </div>
 
 <script>
@@ -473,8 +502,17 @@ const TEAMS=[
  {id:'nc', n:'NC 다이노스',  cap:'#3E6DB5',bill:'#1D3B6E',jer:'#FFFFFF',trim:'#C7A079',st:2},
  {id:'kw', n:'키움 히어로즈',cap:'#6D0F22',bill:'#6D0F22',jer:'#F3EDE2',trim:'#B07F4A',st:0},
 ];
-const T=id=>TEAMS.find(t=>t.id===id);
-const SHORT={lg:'LG',ds:'두산',kia:'KIA',ss:'삼성',lt:'롯데',hh:'한화',ssg:'SSG',kt:'KT',nc:'NC',kw:'키움'};
+/* 나만의 팀 — 모자색·모자챙색·가운데 줄색을 직접 골라 꾸민다 */
+const PALETTE=[
+ {n:'빨강',c:'#D6322E'},{n:'짙은 빨강',c:'#7A1220'},{n:'파랑',c:'#1F5FC4'},
+ {n:'보라',c:'#7B4FA6'},{n:'짙은 주황노랑',c:'#C9822A'},{n:'짙은 회색',c:'#3A3F47'},
+];
+const CUSTOM=[
+ {id:'custom1',n:'내팀1',cap:null,bill:null,jer:'#F7F7F7',trim:null,st:0},
+ {id:'custom2',n:'내팀2',cap:null,bill:null,jer:'#F7F7F7',trim:null,st:0},
+];
+const T=id=>TEAMS.find(t=>t.id===id)||CUSTOM.find(t=>t.id===id);
+const SHORT={lg:'LG',ds:'두산',kia:'KIA',ss:'삼성',lt:'롯데',hh:'한화',ssg:'SSG',kt:'KT',nc:'NC',kw:'키움',custom1:'내팀1',custom2:'내팀2'};
 
 const MODES={
   hit:{title:'치자야구 · 달려야구',desc:'공격만 진행합니다. 3이닝(9아웃) 동안 컴퓨터 수비를 상대로 몇 점을 뽑느냐로 승부합니다.'},
@@ -838,8 +876,52 @@ function buildTeams(){
     d.onclick=()=>{ SFX.ui(); vib(8); pickTeam(t.id); };
     g.appendChild(d);
   });
+  CUSTOM.forEach(c=>{
+    const d=document.createElement('div');
+    d.className='tcard custom'; d.dataset.id=c.id;
+    d.innerHTML = c.cap
+      ? charSVG(c)+'<div class="tn">'+c.n+'</div><div class="tedit" data-edit="1">다시 꾸미기</div>'
+      : '<div class="tnew">+</div><div class="tn">'+c.n+' 만들기</div>';
+    d.onclick=e=>{
+      if(e.target.closest('.tedit')){ SFX.ui(); openCustomize(c); return; }
+      SFX.ui(); vib(8);
+      if(!c.cap){ openCustomize(c); return; }
+      pickTeam(c.id);
+    };
+    g.appendChild(d);
+  });
   syncTeams();
 }
+/* ── 나만의 팀 꾸미기 ── */
+let czTarget=null, czSel={cap:null,bill:null,trim:null};
+function openCustomize(c){
+  czTarget=c;
+  czSel={cap:c.cap||PALETTE[0].c, bill:c.bill||PALETTE[0].c, trim:c.trim||PALETTE[0].c};
+  $('#czTitle').textContent='나만의 팀 꾸미기 · '+c.n;
+  renderCustomize();
+  $('#customize').classList.add('on');
+}
+function renderCustomize(){
+  $('#czPreview').innerHTML=charSVG({jer:'#F7F7F7',st:0,cap:czSel.cap,bill:czSel.bill,trim:czSel.trim});
+  $$('.czSwatches').forEach(row=>{
+    const part=row.dataset.part;
+    row.innerHTML=PALETTE.map(p=>
+      '<div class="sw'+(czSel[part]===p.c?' sel':'')+'" style="background:'+p.c+'" data-c="'+p.c+'" title="'+p.n+'"></div>'
+    ).join('');
+    row.querySelectorAll('.sw').forEach(sw=>{
+      sw.onclick=()=>{ SFX.ui(); vib(6); czSel[part]=sw.dataset.c; renderCustomize(); };
+    });
+  });
+}
+$('#czCancel').onclick=()=>{ SFX.ui(); $('#customize').classList.remove('on'); };
+$('#czDone').onclick=()=>{
+  const wasNew=!czTarget.cap;
+  czTarget.cap=czSel.cap; czTarget.bill=czSel.bill; czTarget.trim=czSel.trim;
+  $('#customize').classList.remove('on');
+  SFX.organ(); vib(12);
+  buildTeams();
+  if(wasNew) pickTeam(czTarget.id);
+};
 function pickTeam(id){
   if(S.pick==='a'){ if(S.b===id)S.b=null; S.a=id; S.pick='b'; }
   else { if(S.a===id)return; S.b=id; S.pick='a'; }
