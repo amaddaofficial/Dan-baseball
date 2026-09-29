@@ -1580,6 +1580,13 @@ function bindPitch(p){
   const up=e=>{
     if(!st.dragging)return; e.preventDefault();
     st.dragging=false; st.charging=false; st.lastPower=st.power;
+    /* 실제로 손을 뗀 지점을 그대로 조준 좌표로 쓴다 — 터치 기기는 move
+       샘플 간격이 성글어서, 마지막으로 기록된 move 위치가 실제 뗀 지점보다
+       못 미친 채로(덜 끌어올린 것처럼) 잡히는 경우가 있었다 */
+    if(e.type==='pointerup'){
+      const rel=panelPt(p,e);
+      st.trail.push({x:rel.x,y:rel.y,t:now()});
+    }
     const tr=st.trail, a=tr[0], b=tr[tr.length-1];
     const dt=Math.max(16,b.t-a.t);
     const vx=(b.x-a.x)/dt*1000, vy=(b.y-a.y)/dt*1000;
@@ -1765,15 +1772,16 @@ function launchPitch(p,vx,vy,power,rx,ry){
   SFX.release(); vib([6,14,10]);
   const speed=pitchSpeed(power,vy);
   const brk=clamp(Math.abs(vx)/850,0,1);
-  /* 손을 뗀 실제 화면 위치를, 저 멀리 보이는 스트라이크존(ZP)의 같은 좌표에
-     그대로 대응시킨다 — 존 상단 높이에서 놓으면 높은 코스, 존 하단 높이에서
-     놓으면 낮은 코스. 이전엔 시작점(공 대기 위치)로부터의 이동거리를 임의의
-     값으로 나눴는데, 그 값이 존까지의 실제 거리(72~127px)보다 훨씬 작아
-     존을 겨냥하려는 드래그가 전부 한계값에 묶여버려 상하 제구가 되지 않았다. */
+  /* 손을 뗀 실제 화면 위치로 상하 코스를 정한다. 존의 실제 그림 크기(55px)에
+     그대로 맞췄더니 각 칸이 18px 폭이라 조금만 어긋나도 전부 중앙으로
+     쏠렸다. 대신 손이 자연스럽게 움직이는 범위를 넓게 잡아 칸마다 37px
+     폭을 주고, 손을 거의 떼지 않는 위치(공 대기 지점 바로 위)는 낮은
+     코스에, 크게 끌어올릴수록 높은 코스에 닿도록 비대칭으로 매핑한다. */
   const zoneMidX=ZP.x+ZP.w/2, zoneHalfW=ZP.w/2;
-  const zoneMidY=ZP.y+ZP.h/2, zoneHalfH=ZP.h/2;
+  const AIM_HI=55, AIM_LO=165;                    // 위로 크게 끌면 높은 코스, 살짝만 끌면 낮은 코스
+  const aimMidY=(AIM_HI+AIM_LO)/2, aimHalfH=(AIM_LO-AIM_HI)/2;
   const nx=clamp((rx-zoneMidX)/zoneHalfW+(vx/1300)*.4,-1.8,1.8);
-  const ny=clamp((ry-zoneMidY)/zoneHalfH,-1.8,1.8);
+  const ny=clamp((ry-aimMidY)/aimHalfH,-1.8,1.8);
   const pt=makePitch(nx,ny,speed,brk);
   const e=zoneEnd(ZP,pt);
   p.st.flight={t0:now(),dur:pt.travel,x0:rx,y0:ry,x1:e.x,y1:e.y,
@@ -2034,10 +2042,10 @@ function fieldAndThrowMs(runnerMs,throwDist,dMin,dMax){
 }
 function raceOutChance(runnerMs,throwMs){
   const margin=runnerMs-throwMs;      // 양수=공이 먼저 도착(아웃 쪽), 음수=주자가 먼저(세이프 쪽)
-  const win=runnerMs*.18;
-  if(margin>=win) return .68;
-  if(margin<=-win) return .08;
-  return clamp(.08+(margin+win)/(2*win)*.60,.08,.68);
+  const win=runnerMs*.10;             // 오차 허용 폭을 좁혀 판정을 뚜렷하게 만든다
+  if(margin>=win) return .93;
+  if(margin<=-win) return .04;
+  return clamp(.04+(margin+win)/(2*win)*.89,.04,.93);
 }
 function hitPlay(kind,q,cell){
   G.phase='hitball'; dropPanels();
